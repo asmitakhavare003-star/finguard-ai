@@ -1,0 +1,18 @@
+# Production dependencies — Python 3.11
+fastapi
+uvicorn[standard]
+pydantic>=2.0
+pydantic-settings
+langgraph
+langchain
+langchain-community
+langchain-openai
+langchain-qdrant
+langchain-text-splitters
+qdrant-client
+pypdf
+python-dotenv
+httpx
+
+# Test dependencies
+pytest
