@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -53,17 +52,6 @@ def sample_documents() -> list[Document]:
             metadata={"source": "data/sample_10k.pdf", "page": 2},
         ),
     ]
-
-
-@pytest.fixture
-def mock_qdrant_vector_store(sample_documents: list[Document]) -> MagicMock:
-    """Mock QdrantVectorStore with a retriever that returns sample_documents."""
-    store = MagicMock(name="QdrantVectorStore")
-    retriever = MagicMock(name="VectorStoreRetriever")
-    retriever.invoke.return_value = sample_documents
-    store.as_retriever.return_value = retriever
-    store.similarity_search.return_value = sample_documents
-    return store
 
 
 @pytest.fixture

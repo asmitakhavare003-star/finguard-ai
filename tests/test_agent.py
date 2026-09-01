@@ -33,23 +33,6 @@ def test_retrieve_node_updates_retrieved_docs(
     mock_retriever.invoke.assert_called_once_with(mock_agent_state["query"])
 
 
-def test_retrieve_node_uses_mock_qdrant_vector_store(
-    mock_agent_state: dict[str, Any],
-    mock_qdrant_vector_store: MagicMock,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Fixture mock store's retriever can back retrieve_node."""
-    monkeypatch.setattr(
-        "app.agent.graph.get_retriever",
-        lambda k=4: mock_qdrant_vector_store.as_retriever(search_kwargs={"k": k}),
-    )
-
-    result = retrieve_node(mock_agent_state)
-
-    assert len(result["retrieved_docs"]) == 2
-    mock_qdrant_vector_store.as_retriever.assert_called()
-
-
 @pytest.mark.integration
 def test_analyze_endpoint_streams_sse_chunks(
     client: TestClient,

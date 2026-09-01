@@ -25,6 +25,17 @@ class RiskLevel(str, Enum):
     CRITICAL = "CRITICAL"
 
 
+class ConfidenceLevel(str, Enum):
+    """How strongly the answer is grounded in retrieved evidence / tools.
+
+    Set in Python (not by the LLM) so a model cannot mark a refused run as HIGH.
+    """
+
+    HIGH = "HIGH"
+    LOW = "LOW"
+    REFUSED = "REFUSED"
+
+
 class FinancialQueryInput(BaseModel):
     """Inbound request for a company financial intelligence query.
 
@@ -74,3 +85,17 @@ class FinancialSummaryOutput(BaseModel):
     risk_level: RiskLevel
     summary: str
     sources: List[str] = Field(default_factory=list)
+    confidence: ConfidenceLevel = Field(
+        default=ConfidenceLevel.HIGH,
+        description=(
+            "HIGH when tools verified numbers; LOW when grounded in docs only; "
+            "REFUSED when retrieval returned nothing"
+        ),
+    )
+    guardrail: Optional[str] = Field(
+        default=None,
+        description=(
+            "Machine-readable safety reason, e.g. no_documents_retrieved or "
+            "ungrounded_profit_margin_stripped"
+        ),
+    )

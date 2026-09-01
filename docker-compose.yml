@@ -9,14 +9,12 @@ services:
     environment:
       # Override host-local URLs so containers talk over the Docker network.
       QDRANT_URL: http://qdrant:6333
-      REDIS_URL: redis://redis:6379
     ports:
       - "8000:8000"
     volumes:
       - ./.env:/app/.env:ro
     depends_on:
       - qdrant
-      - redis
     networks:
       - finguard-network
     restart: unless-stopped
@@ -28,15 +26,6 @@ services:
       - "6333:6333"
     volumes:
       - qdrant_storage:/qdrant/storage
-    networks:
-      - finguard-network
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    container_name: finguard-redis
-    ports:
-      - "6379:6379"
     networks:
       - finguard-network
     restart: unless-stopped

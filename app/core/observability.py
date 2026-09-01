@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import json
 import logging
 import os
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, ParamSpec, TypeVar, cast
 
 from app.core.config import settings
@@ -106,3 +107,33 @@ def trace_latency(func: Callable[P, R]) -> Callable[P, R]:
             _log_elapsed(started)
 
     return cast(Callable[P, R], sync_wrapper)
+
+
+def log_run_audit(
+    *,
+    company_name: str,
+    query: str,
+    chunk_count: int,
+    sources: Sequence[str],
+    tools: Sequence[str],
+    confidence: str,
+    guardrail: str | None = None,
+) -> dict[str, Any]:
+    """Print a one-line JSON audit trail: sources, tools, and guardrail outcome.
+
+    This is the simple, demo-friendly trail — not a durable compliance log.
+    LangSmith still holds the full LLM trace when tracing is enabled.
+    """
+    payload = {
+        "company_name": company_name,
+        "query": query[:240],
+        "chunk_count": chunk_count,
+        "sources": list(sources),
+        "tools": list(tools),
+        "confidence": confidence,
+        "guardrail": guardrail,
+    }
+    line = f"[AUDIT] {json.dumps(payload)}"
+    logger.info(line)
+    print(line)
+    return payload

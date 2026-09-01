@@ -9,12 +9,13 @@ FinGuard AI combines **LangGraph** agent orchestration, **Qdrant** vector retrie
 ## Key Features
 
 - **RAG over financial PDFs** — ingest 10-K (and similar) filings into Qdrant with OpenAI embeddings
-- **Structured Pydantic v2 validation** — `FinancialSummaryOutput` + `RiskLevel` enum enforce strict API contracts
+- **Safety guardrails** — empty retrieval **refuses** (no LLM call); profit margin is dropped unless the calculator tool actually ran; each run logs an `[AUDIT]` line
+- **Structured Pydantic v2 validation** — `FinancialSummaryOutput` + `RiskLevel` / `ConfidenceLevel` enums enforce strict API contracts
 - **Deterministic financial tools** — profit-margin and debt-risk helpers bound to the LLM via LangChain `@tool`
-- **Stateful LangGraph orchestration** — `retrieve → reason/tools → format` pipeline with shared `AgentState`
-- **LangSmith observability** — tracing + local `@trace_latency` node timing
-- **Dockerized deployment** — multi-stage `Dockerfile` + Compose stack (`web`, `qdrant`, `redis`)
-- **Production-minded tests** — Pytest suite for schemas, retrieval node, and streaming API
+- **Stateful LangGraph orchestration** — `retrieve → reason/tools → format` (or `refuse`) pipeline with shared `AgentState`
+- **LangSmith observability** — tracing + local `@trace_latency` node timing + audit trail
+- **Dockerized deployment** — multi-stage `Dockerfile` + Compose stack (`web`, `qdrant`)
+- **Production-minded tests** — Pytest suite for schemas, retrieval, guardrails, streaming API, and RAG eval harness
 
 ---
 
@@ -54,10 +55,11 @@ FinGuard AI combines **LangGraph** agent orchestration, **Qdrant** vector retrie
  ┌──────────────────┐     ┌─────────────────────┐
  │  LangGraph       │────▶│  FINANCIAL_TOOLS    │
  │  retrieve_node   │     │  margin / debt risk │
- │  reason_and_tool │◀────┘                     │
- │  format_output   │
+ │       │          │◀────┘                     │
+ │       ├── docs? ──▶ reason_and_tool → format │
+ │       └── empty ─▶ refuse_node (no LLM)      │
  └────────┬─────────┘
-          │ with_structured_output(FinancialSummaryOutput)
+          │ FinancialSummaryOutput + confidence
           ▼
  ┌──────────────────┐
  │  FastAPI SSE     │  POST /api/v1/analyze
@@ -69,9 +71,10 @@ FinGuard AI combines **LangGraph** agent orchestration, **Qdrant** vector retrie
 
 1. **Ingest** — PDF → chunks → embeddings → upsert into Qdrant (`financial_reports`)
 2. **Retrieve** — user query hits `retrieve_node` → top-k chunks into `AgentState.retrieved_docs`
-3. **Reason + tools** — `gpt-4o-mini` with bound tools analyzes context; may call margin/debt helpers
-4. **Structure** — `format_output_node` emits validated `FinancialSummaryOutput`
-5. **Stream** — FastAPI yields SSE frames (status, retrieval, tools, tokens, final output, done)
+3. **Guardrail** — if zero chunks, `refuse_node` returns `confidence=REFUSED` with null metrics (no LLM call)
+4. **Reason + tools** — `gpt-4o-mini` with bound tools analyzes context; may call margin/debt helpers
+5. **Structure** — `format_output_node` emits validated `FinancialSummaryOutput`; profit margin is stripped unless the calculator tool ran
+6. **Stream** — FastAPI yields SSE frames (status, retrieval, tools, guardrail, final output, done)
 
 ---
 
@@ -83,7 +86,8 @@ finguard-ai/
 │   ├── main.py                 # FastAPI app, /health, SSE /api/v1/analyze
 │   ├── agent/                  # LangGraph financial agent
 │   │   ├── state.py            # AgentState TypedDict
-│   │   └── graph.py            # retrieve → reason → format → compile
+│   │   ├── guardrails.py       # empty-retrieve refuse + metric stripping
+│   │   └── graph.py            # retrieve → reason/format or refuse → compile
 │   ├── core/
 │   │   ├── config.py           # Pydantic Settings + SecretStr
 │   │   └── observability.py    # LangSmith setup + @trace_latency
@@ -92,20 +96,21 @@ finguard-ai/
 │   ├── services/
 │   │   ├── vector_store.py     # PDF ingest + Qdrant retriever
 │   │   └── tools.py            # @tool financial helpers
-│   ├── api/                    # Route package scaffold
-│   ├── clients/                # External client helpers (scaffold)
-│   ├── rag/                    # RAG helpers (scaffold)
-│   └── ...
+│   └── eval/                   # Golden-set RAG eval harness
 ├── data/
-│   └── sample_10k.pdf          # Sample filing for local RAG demos
+│   ├── sample_10k.pdf          # Sample filing for local RAG demos
+│   └── eval/                   # Golden Q&A cases
+├── scripts/
+│   └── eval_rag.py             # CLI: python scripts/eval_rag.py
 ├── tests/
 │   ├── conftest.py             # Shared fixtures (TestClient, mocks)
 │   ├── test_schemas.py         # Pydantic contract tests
-│   └── test_agent.py           # retrieve_node + streaming API tests
-├── docs/
-│   └── MANUAL_SETUP_STEPS.md   # End-to-end manual setup walkthrough
+│   ├── test_agent.py           # retrieve_node + streaming API tests
+│   ├── test_guardrails.py      # empty retrieve refuse + metric stripping
+│   ├── test_eval_rag.py        # Golden dataset + retrieval scorer tests
+│   └── test_tools.py           # Profit-margin + debt-risk calculations
 ├── Dockerfile                  # Multi-stage production image
-├── docker-compose.yml          # web + qdrant + redis
+├── docker-compose.yml          # web + qdrant
 ├── requirements.txt
 ├── pytest.ini
 ├── .env.example                # Safe template for local secrets
@@ -145,11 +150,23 @@ Also supported: `PROJECT_NAME`, `ENVIRONMENT`, `QDRANT_API_KEY`, `LANGCHAIN_ENDP
 
 ---
 
-## How to Run the Application
+## Run the project (step by step)
 
-### Option A — Docker Compose (recommended)
+Do this in order: **start the app → call the API → run tests → run eval**.  
+Eval is an exam on known questions. It is not how you start the product.
 
-Starts **web** (FastAPI), **Qdrant**, and **Redis** on `finguard-network`.
+You need Docker and a real `OPENAI_API_KEY` in `.env` (never commit that file).
+
+### 1. Environment
+
+```bash
+cd finguard-ai
+cp .env.example .env
+```
+
+Edit `.env` and set `OPENAI_API_KEY`. Leave `QDRANT_URL=http://localhost:6333` for local use.
+
+### 2. Start the stack
 
 ```bash
 docker compose up --build -d
@@ -157,49 +174,91 @@ docker compose ps
 ```
 
 - API: [http://localhost:8000](http://localhost:8000)
-- Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
+- Swagger: [http://localhost:8000/docs](http://localhost:8000/docs)
 - Health: [http://localhost:8000/health](http://localhost:8000/health)
 - Qdrant: [http://localhost:6333](http://localhost:6333)
 
-Ingest the sample 10-K into Qdrant (one-time, from a shell that can reach OpenAI + Qdrant):
+### 3. Health check
 
 ```bash
-# from host, with venv + Qdrant on localhost:6333
-python -c "from app.services.vector_store import ingest_pdf; ingest_pdf('data/sample_10k.pdf')"
+curl http://localhost:8000/health
+# {"status":"ok"}
+```
 
-# or inside the web container (QDRANT_URL already points at http://qdrant:6333)
+### 4. Ingest the sample 10-K (once)
+
+Until this succeeds, retrieval is empty and the API **refuses** instead of answering.
+
+```bash
 docker compose exec web python -c "from app.services.vector_store import ingest_pdf; ingest_pdf('data/sample_10k.pdf')"
 ```
 
-Stop:
+This uses OpenAI embeddings. Re-run only if you wiped Qdrant (`docker compose down -v`).
+
+### 5. Call the live API
+
+Swagger: **POST `/api/v1/analyze` → Try it out**, or:
 
 ```bash
-docker compose down          # keep Qdrant volume
-docker compose down -v       # also wipe vector storage
+curl -N -X POST http://localhost:8000/api/v1/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"company_name":"Apple Inc.","query":"What was Apple net income for fiscal 2024?"}'
 ```
 
-### Option B — Local native execution
+**Success:** SSE events (`retrieval`, `final_output`, `done`) and a real summary — not `confidence: REFUSED`.
+
+If you see **REFUSED**, ingest failed or Qdrant is empty. Repeat step 4.
+
+More request/response detail: [API usage](#api-usage--example-requests).
+
+### 6. Run unit tests (Pytest)
+
+No live Qdrant required. From the repo root, with the project venv if you use one:
+
+```bash
+source .venv/bin/activate    # skip if you only use Docker for the API
+pip install -r requirements.txt
+pytest -v
+```
+
+Useful subsets:
+
+```bash
+pytest tests/test_schemas.py tests/test_guardrails.py tests/test_eval_rag.py tests/test_agent.py -v
+```
+
+### 7. Run eval (after the API works)
+
+Same Qdrant search as the live app. Qdrant must be up and the PDF ingested (steps 2 and 4).
+
+```bash
+source .venv/bin/activate
+python scripts/eval_rag.py
+```
+
+You should see PASS/FAIL for each golden question (did Qdrant return the expected terms?).
+
+Schema, calculator tools, and fabricated-source checks live in `pytest`, not in this script.
+
+### Stop
+
+```bash
+docker compose down          # keep Qdrant data (no need to ingest next time)
+docker compose down -v       # wipe vector storage
+```
+
+### Alternative: API on the host (Qdrant still in Docker)
 
 ```bash
 python3.11 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install --upgrade pip
+source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env               # then edit secrets
-```
-
-Run Qdrant locally (example):
-
-```bash
 docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
-```
-
-Ingest + start API:
-
-```bash
 python -c "from app.services.vector_store import ingest_pdf; ingest_pdf('data/sample_10k.pdf')"
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+Then use the same health, `/api/v1/analyze`, `pytest`, and `eval_rag.py` commands as above.
 
 ---
 
@@ -260,25 +319,26 @@ Interactive docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ### Pytest
 
+Unit tests do not need Qdrant. Run them from the repo root (see [step 6](#6-run-unit-tests-pytest)):
+
 ```bash
 pytest -v
-# or
-pytest tests/ -v
 pytest tests/test_schemas.py -v
 pytest -m integration -v
 ```
 
 The suite covers:
 
-- Schema validation / `RiskLevel` enforcement
+- Schema validation / `RiskLevel` and `ConfidenceLevel` enforcement
 - `retrieve_node` with a mocked Qdrant retriever
+- Guardrails: empty retrieval refuse + ungrounded profit-margin stripping
 - Streaming `/api/v1/analyze` (mocked `astream_events`) returning valid SSE frames
 
 ### LangSmith
 
 When `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` is set, `setup_tracing()` exports env vars LangChain/LangGraph read at runtime. Traces typically include:
 
-- Graph node spans (`retrieve_node`, `reason_and_tool_node`, `format_output_node`)
+- Graph node spans (`retrieve_node`, `reason_and_tool_node`, `format_output_node`, `refuse_node`)
 - LLM calls (prompts, completions, **token usage**)
 - Tool invocations and latency
 
@@ -287,21 +347,49 @@ Locally, `@trace_latency` also prints lines like:
 ```text
 [LATENCY] retrieve_node completed in 142.30 ms
 [OBSERVABILITY] LangSmith tracing is ENABLED
+[AUDIT] {"company_name":"Apple Inc.","chunk_count":4,"tools":["assess_debt_risk"],"confidence":"HIGH","guardrail":null}
 ```
 
+Latency logs answer “how slow was this node?” LangSmith answers “what did the model see and do?” The `[AUDIT]` line is a simple, local trail of sources + tools + guardrail outcome. None of these **stop** hallucinations; they make failures visible.
+
+### Guardrails (reduce hallucination, do not eliminate it)
+
+You cannot guarantee an LLM never invents facts. FinGuard reduces the worst cases:
+
+| Rule | What happens |
+|------|----------------|
+| No chunks retrieved | `refuse_node` — no LLM call, `confidence=REFUSED`, all metrics null |
+| Calculator tool not called | `profit_margin` is stripped to `null` in Python |
+| Invalid schema / enum | Pydantic rejects the payload |
+
+`confidence` and `guardrail` are set in Python, not by the model, so the LLM cannot mark a refused run as `HIGH`.
+
 Project traces appear under your LangSmith project name (`LANGCHAIN_PROJECT`, default `finguard-ai`).
+
+### RAG evaluation harness
+
+One exam: did search find the right 10-K chunks?
+
+- Answer key: `data/eval/golden_cases.json` (20 Apple questions + required terms)
+- Script: `scripts/eval_rag.py` — same Qdrant retriever as the API
+- Everything else (schema, tools, citations, guardrails) is `pytest`
+
+**Run eval** — Qdrant up, PDF ingested, then from the repo root (see [step 7](#7-run-eval-after-the-api-works)):
+
+```bash
+python scripts/eval_rag.py
+```
 
 ---
 
 ## Project Roadmap / Future Enhancements
 
-- **Redis caching / rate limiting** — wire the Compose `redis` service for session cache and per-IP API limits
 - **Multi-document comparison** — compare metrics and risk across multiple tickers / filings in one run
 - **Web UI frontend** — React/Next dashboard consuming SSE for live analysis progress
 - **AuthN/AuthZ** — API keys or OAuth2 for enterprise multi-tenant access
 - **Richer toolbelt** — liquidity ratios, YoY growth, citation-aware answer grounding
 - **CI pipeline** — GitHub Actions for `pytest`, image build, and Compose smoke tests
-- **Eval harness** — golden 10-K Q&A set with LangSmith datasets / evaluators
+- **LangSmith dataset export** — push golden cases to LangSmith for trace-linked eval runs
 
 ---
 
@@ -310,8 +398,3 @@ Project traces appear under your LangSmith project name (`LANGCHAIN_PROJECT`, de
 Proprietary / interview portfolio project unless otherwise specified by the repository owner.
 
 ---
-
-## Further reading
-
-- For a full from-scratch manual walkthrough (venv → schemas → agent → Docker → tests), see [`docs/MANUAL_SETUP_STEPS.md`](docs/MANUAL_SETUP_STEPS.md).
-- For the QA → AI Engineer interview roadmap (what’s covered, what’s missing, phased plan), see [`docs/CAREER_ROADMAP.md`](docs/CAREER_ROADMAP.md).

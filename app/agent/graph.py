@@ -8,18 +8,21 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 
+from app.agent.guardrails import (
+    apply_metric_guardrails,
+    build_refusal_output,
+    called_tool_names,
+    route_after_retrieve,
+    sources_from_docs,
+)
 from app.agent.state import AgentState
 from app.core.config import settings
-from app.core.observability import setup_tracing, trace_latency
+from app.core.observability import log_run_audit, trace_latency
 from app.schemas.financial import FinancialSummaryOutput
 from app.services.tools import FINANCIAL_TOOLS
 from app.services.vector_store import get_retriever
 
 LLM_MODEL = "gpt-4o-mini"
-
-# Configure LangSmith env vars once when the agent module is imported.
-setup_tracing()
-
 
 def _chat_model() -> ChatOpenAI:
     """Build a ChatOpenAI client using application settings."""
@@ -98,11 +101,32 @@ def reason_and_tool_node(state: AgentState) -> dict[str, Any]:
 
 
 @trace_latency
+def refuse_node(state: AgentState) -> dict[str, Any]:
+    """Skip the LLM and return a refused structured output.
+
+    Fires when retrieval returned no chunks — inventing metrics from an empty
+    context is the highest-risk hallucination path in this app.
+    """
+    output = build_refusal_output(state.get("company_name") or "Unknown")
+    log_run_audit(
+        company_name=output.company_name,
+        query=str(state.get("query") or ""),
+        chunk_count=0,
+        sources=[],
+        tools=[],
+        confidence=output.confidence.value,
+        guardrail=output.guardrail,
+    )
+    return {"final_output": output}
+
+
+@trace_latency
 def format_output_node(state: AgentState) -> dict[str, Any]:
     """Parse the agent transcript into a strict ``FinancialSummaryOutput``.
 
     Uses ``ChatOpenAI.with_structured_output(FinancialSummaryOutput)`` so the
     final payload matches our Pydantic contract (metrics, risk_level, sources).
+    Confidence and profit-margin stripping are applied in Python afterwards.
     """
     structured_llm = _chat_model().with_structured_output(FinancialSummaryOutput)
 
@@ -113,21 +137,21 @@ def format_output_node(state: AgentState) -> dict[str, Any]:
         transcript_parts.append(f"{role}: {content}")
     transcript = "\n".join(transcript_parts) if transcript_parts else "(no messages)"
 
-    sources: list[str] = []
-    for doc in state.get("retrieved_docs") or []:
-        metadata = getattr(doc, "metadata", None) or {}
-        source = metadata.get("source") or metadata.get("file_path")
-        if source and source not in sources:
-            sources.append(str(source))
+    sources = sources_from_docs(state.get("retrieved_docs") or [])
+    # returns only names of tools
+    tool_names = called_tool_names(state.get("messages") or [])
 
     prompt = (
         f"Company name: {state.get('company_name') or 'Unknown'}\n"
         f"Original query: {state['query']}\n\n"
         f"Agent transcript:\n{transcript}\n\n"
-        f"Known sources (include these in sources when relevant): {sources}\n\n"
-        "Produce a FinancialSummaryOutput with best-effort metrics from the "
-        "transcript/context. If a metric is unknown, leave it null. Choose an "
-        "appropriate risk_level (LOW, MEDIUM, HIGH, or CRITICAL)."
+        f"Known sources (include these in sources when relevant): {sources}\n"
+        f"Tools actually called this run: {sorted(tool_names) or 'none'}\n\n"
+        "Produce a FinancialSummaryOutput. Copy metrics only from the transcript "
+        "or tool results. If a metric is unknown, leave it null. "
+        "If calculate_financial_ratios was not called, leave profit_margin null. "
+        "Do not invent sources. Choose an appropriate risk_level "
+        "(LOW, MEDIUM, HIGH, or CRITICAL)."
     )
 
     final_output = structured_llm.invoke(
@@ -135,23 +159,44 @@ def format_output_node(state: AgentState) -> dict[str, Any]:
             SystemMessage(
                 content=(
                     "You convert financial analysis into a strict structured "
-                    "FinancialSummaryOutput schema. Do not invent sources."
+                    "FinancialSummaryOutput schema. Do not invent sources or metrics."
                 )
             ),
             HumanMessage(content=prompt),
         ]
     )
+    if not isinstance(final_output, FinancialSummaryOutput):
+        final_output = FinancialSummaryOutput.model_validate(final_output)
+    final_output = apply_metric_guardrails(final_output, tool_names)
+    log_run_audit(
+        company_name=final_output.company_name,
+        query=str(state.get("query") or ""),
+        chunk_count=len(state.get("retrieved_docs") or []),
+        sources=final_output.sources or sources,
+        tools=sorted(tool_names),
+        confidence=final_output.confidence.value,
+        guardrail=final_output.guardrail,
+    )
     return {"final_output": final_output}
 
 
-# --- Graph wiring: START → retrieve → reason/tools → format → END ---
+# --- Graph wiring: retrieve → (docs? reason → format : refuse) → END ---
 workflow = StateGraph(AgentState)
 workflow.add_node("retrieve_node", retrieve_node)
 workflow.add_node("reason_and_tool_node", reason_and_tool_node)
 workflow.add_node("format_output_node", format_output_node)
+workflow.add_node("refuse_node", refuse_node)
 workflow.add_edge(START, "retrieve_node")
-workflow.add_edge("retrieve_node", "reason_and_tool_node")
+workflow.add_conditional_edges(
+    "retrieve_node",
+    route_after_retrieve,
+    {
+        "reason_and_tool_node": "reason_and_tool_node",
+        "refuse_node": "refuse_node",
+    },
+)
 workflow.add_edge("reason_and_tool_node", "format_output_node")
 workflow.add_edge("format_output_node", END)
+workflow.add_edge("refuse_node", END)
 
 financial_agent = workflow.compile()

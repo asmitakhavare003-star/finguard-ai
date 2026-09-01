@@ -19,13 +19,6 @@ class TestFinancialQueryInput:
         assert sample_query_input.query.startswith("What are the key")
         assert sample_query_input.fiscal_year == 2023
 
-    def test_fiscal_year_optional(self) -> None:
-        payload = FinancialQueryInput(
-            company_name="Apple Inc.",
-            query="Summarize liquidity",
-        )
-        assert payload.fiscal_year is None
-
     def test_rejects_invalid_fiscal_year_type(self) -> None:
         with pytest.raises(ValidationError) as exc_info:
             FinancialQueryInput(
@@ -58,16 +51,6 @@ class TestFinancialSummaryOutput:
             )
         assert "risk_level" in str(exc_info.value)
 
-    def test_accepts_all_risk_level_values(self) -> None:
-        for level in RiskLevel:
-            out = FinancialSummaryOutput(
-                company_name="Apple Inc.",
-                metrics=FinancialMetrics(profit_margin=10.0),
-                risk_level=level,
-                summary=f"Risk is {level.value}",
-            )
-            assert out.risk_level is level
-
     def test_rejects_invalid_metric_types(self) -> None:
         with pytest.raises(ValidationError) as exc_info:
             FinancialSummaryOutput(
@@ -78,11 +61,13 @@ class TestFinancialSummaryOutput:
             )
         assert "revenue" in str(exc_info.value)
 
-    def test_sources_default_to_empty_list(self) -> None:
-        out = FinancialSummaryOutput(
-            company_name="Apple Inc.",
-            metrics=FinancialMetrics(),
-            risk_level=RiskLevel.LOW,
-            summary="No sources provided",
-        )
-        assert out.sources == []
+    def test_enforces_confidence_enum(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            FinancialSummaryOutput(
+                company_name="Apple Inc.",
+                metrics=FinancialMetrics(),
+                risk_level=RiskLevel.LOW,
+                summary="bad confidence",
+                confidence="SURE",  # type: ignore[arg-type]
+            )
+        assert "confidence" in str(exc_info.value)

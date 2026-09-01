@@ -114,6 +114,7 @@ async def event_generator(query_input: FinancialQueryInput) -> AsyncIterator[str
                 "retrieve_node",
                 "reason_and_tool_node",
                 "format_output_node",
+                "refuse_node",
             }:
                 yield _sse(
                     {
@@ -186,9 +187,20 @@ async def event_generator(query_input: FinancialQueryInput) -> AsyncIterator[str
                     )
                 continue
 
-            if kind == "on_chain_end" and name == "format_output_node":
+            if kind == "on_chain_end" and name in {"format_output_node", "refuse_node"}:
                 output = data.get("output") or {}
                 final_output = output.get("final_output")
+                if name == "refuse_node":
+                    reason = getattr(final_output, "guardrail", None)
+                    confidence = getattr(final_output, "confidence", None)
+                    yield _sse(
+                        {
+                            "event": "guardrail",
+                            "node": name,
+                            "reason": reason,
+                            "confidence": getattr(confidence, "value", confidence),
+                        }
+                    )
                 yield _sse(
                     {
                         "event": "final_output",

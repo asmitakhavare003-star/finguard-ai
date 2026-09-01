@@ -1,0 +1,264 @@
+{
+  "version": "1.0",
+  "corpus": "data/sample_10k.pdf",
+  "description": "Golden questions for Apple Inc. FY2024 10-K (sample_10k.pdf). Eval asks the same Qdrant retriever the live app uses.",
+  "cases": [
+    {
+      "id": "net_income_fy2024",
+      "company_name": "Apple Inc.",
+      "query": "What was Apple's net income for fiscal 2024?",
+      "retrieval": {
+        "must_include_terms": [
+          "net income",
+          "93,736"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "total_net_sales_fy2024",
+      "company_name": "Apple Inc.",
+      "query": "What were total net sales in fiscal 2024?",
+      "retrieval": {
+        "must_include_terms": [
+          "391,035",
+          "net sales"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "liquidity_risk",
+      "company_name": "Apple Inc.",
+      "query": "What liquidity risks does Apple disclose?",
+      "retrieval": {
+        "must_include_terms": [
+          "liquidity"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 1
+      }
+    },
+    {
+      "id": "debt_issuance_risk",
+      "company_name": "Apple Inc.",
+      "query": "How could debt market conditions affect Apple?",
+      "retrieval": {
+        "must_include_terms": [
+          "debt",
+          "liquidity"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "share_repurchase_program",
+      "company_name": "Apple Inc.",
+      "query": "What is Apple's share repurchase authorization?",
+      "retrieval": {
+        "must_include_terms": [
+          "repurchase",
+          "110"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "services_growth",
+      "company_name": "Apple Inc.",
+      "query": "How did Services net sales change in 2024 versus 2023?",
+      "retrieval": {
+        "must_include_terms": [
+          "services",
+          "net sales"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "iphone_sales_trend",
+      "company_name": "Apple Inc.",
+      "query": "What drove iPhone net sales in fiscal 2024?",
+      "retrieval": {
+        "must_include_terms": [
+          "iphone",
+          "net sales"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "earnings_per_share",
+      "company_name": "Apple Inc.",
+      "query": "What was diluted earnings per share for fiscal 2024?",
+      "retrieval": {
+        "must_include_terms": [
+          "earnings per share",
+          "6.08"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "greater_china_segment",
+      "company_name": "Apple Inc.",
+      "query": "Why did Greater China net sales change in 2024?",
+      "retrieval": {
+        "must_include_terms": [
+          "china",
+          "net sales"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "americas_segment",
+      "company_name": "Apple Inc.",
+      "query": "What drove Americas net sales in fiscal 2024?",
+      "retrieval": {
+        "must_include_terms": [
+          "americas",
+          "net sales"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "europe_segment",
+      "company_name": "Apple Inc.",
+      "query": "What drove Europe net sales in fiscal 2024?",
+      "retrieval": {
+        "must_include_terms": [
+          "europe",
+          "net sales"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "competition_risk",
+      "company_name": "Apple Inc.",
+      "query": "How does Apple describe competition in its markets?",
+      "retrieval": {
+        "must_include_terms": [
+          "competition"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 1
+      }
+    },
+    {
+      "id": "cybersecurity_disclosure",
+      "company_name": "Apple Inc.",
+      "query": "What cybersecurity disclosures does Apple provide?",
+      "retrieval": {
+        "must_include_terms": [
+          "cybersecurity"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 1
+      }
+    },
+    {
+      "id": "distribution_channels",
+      "company_name": "Apple Inc.",
+      "query": "What mix of direct versus indirect channels drives net sales?",
+      "retrieval": {
+        "must_include_terms": [
+          "direct",
+          "indirect",
+          "net sales"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "seasonality_q1",
+      "company_name": "Apple Inc.",
+      "query": "Does Apple experience seasonal patterns in net sales?",
+      "retrieval": {
+        "must_include_terms": [
+          "seasonal",
+          "quarter"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "ipad_sales",
+      "company_name": "Apple Inc.",
+      "query": "How did iPad net sales perform in fiscal 2024?",
+      "retrieval": {
+        "must_include_terms": [
+          "ipad",
+          "net sales"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "mac_sales",
+      "company_name": "Apple Inc.",
+      "query": "How did Mac net sales change in fiscal 2024?",
+      "retrieval": {
+        "must_include_terms": [
+          "mac",
+          "net sales"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "wearables_accessories",
+      "company_name": "Apple Inc.",
+      "query": "What happened to Wearables and Accessories net sales in 2024?",
+      "retrieval": {
+        "must_include_terms": [
+          "wearables",
+          "net sales"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "foreign_exchange_impact",
+      "company_name": "Apple Inc.",
+      "query": "How did foreign exchange affect net sales in 2024?",
+      "retrieval": {
+        "must_include_terms": [
+          "foreign",
+          "exchange"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    },
+    {
+      "id": "deferred_revenue",
+      "company_name": "Apple Inc.",
+      "query": "How much revenue was recognized from deferred revenue in 2024?",
+      "retrieval": {
+        "must_include_terms": [
+          "deferred revenue"
+        ],
+        "min_chunks": 1,
+        "min_relevance_score": 2
+      }
+    }
+  ]
+}
