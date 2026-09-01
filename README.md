@@ -382,17 +382,6 @@ python scripts/eval_rag.py
 
 ---
 
-## Project Roadmap / Future Enhancements
-
-- **Multi-document comparison** — compare metrics and risk across multiple tickers / filings in one run
-- **Web UI frontend** — React/Next dashboard consuming SSE for live analysis progress
-- **AuthN/AuthZ** — API keys or OAuth2 for enterprise multi-tenant access
-- **Richer toolbelt** — liquidity ratios, YoY growth, citation-aware answer grounding
-- **CI pipeline** — GitHub Actions for `pytest`, image build, and Compose smoke tests
-- **LangSmith dataset export** — push golden cases to LangSmith for trace-linked eval runs
-
----
-
 ## License
 
 Proprietary / interview portfolio project unless otherwise specified by the repository owner.
