@@ -64,12 +64,8 @@ def _sse(payload: dict[str, Any]) -> str:
 
 def _initial_agent_state(query_input: FinancialQueryInput) -> dict[str, Any]:
     """Map API input into the LangGraph ``AgentState`` shape."""
-    query = query_input.query
-    if query_input.fiscal_year is not None:
-        query = f"{query} (fiscal year: {query_input.fiscal_year})"
-
     return {
-        "query": query,
+        "query": query_input.query,
         "company_name": query_input.company_name,
         "retrieved_docs": [],
         "messages": [],

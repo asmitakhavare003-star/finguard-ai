@@ -11,7 +11,7 @@ FinGuard AI combines **LangGraph** agent orchestration, **Qdrant** vector retrie
 - **RAG over financial PDFs** — ingest 10-K (and similar) filings into Qdrant with OpenAI embeddings
 - **Safety guardrails** — empty retrieval **refuses** (no LLM call); profit margin is dropped unless the calculator tool actually ran; each run logs an `[AUDIT]` line
 - **Structured Pydantic v2 validation** — `FinancialSummaryOutput` + `RiskLevel` / `ConfidenceLevel` enums enforce strict API contracts
-- **Deterministic financial tools** — profit-margin and debt-risk helpers bound to the LLM via LangChain `@tool`
+- **Deterministic financial tool** — profit-margin calculation bound to the LLM via LangChain `@tool`
 - **Stateful LangGraph orchestration** — `retrieve → reason/tools → format` (or `refuse`) pipeline with shared `AgentState`
 - **LangSmith observability** — tracing + local `@trace_latency` node timing + audit trail
 - **Dockerized deployment** — multi-stage `Dockerfile` + Compose stack (`web`, `qdrant`)
@@ -41,7 +41,7 @@ FinGuard AI combines **LangGraph** agent orchestration, **Qdrant** vector retrie
 ```text
  ┌──────────────────┐
  │  Financial PDF   │  (e.g. data/sample_10k.pdf)
- │  PyPDFLoader +   │
+ │  pypdf +         │
  │  text split      │
  └────────┬─────────┘
           │ embed (OpenAI)
@@ -54,7 +54,7 @@ FinGuard AI combines **LangGraph** agent orchestration, **Qdrant** vector retrie
           ▼
  ┌──────────────────┐     ┌─────────────────────┐
  │  LangGraph       │────▶│  FINANCIAL_TOOLS    │
- │  retrieve_node   │     │  margin / debt risk │
+ │  retrieve_node   │     │  profit margin      │
  │       │          │◀────┘                     │
  │       ├── docs? ──▶ reason_and_tool → format │
  │       └── empty ─▶ refuse_node (no LLM)      │
@@ -108,7 +108,7 @@ finguard-ai/
 │   ├── test_agent.py           # retrieve_node + streaming API tests
 │   ├── test_guardrails.py      # empty retrieve refuse + metric stripping
 │   ├── test_eval_rag.py        # Golden dataset + retrieval scorer tests
-│   └── test_tools.py           # Profit-margin + debt-risk calculations
+│   └── test_tools.py           # Profit-margin calculation
 ├── Dockerfile                  # Multi-stage production image
 ├── docker-compose.yml          # web + qdrant
 ├── requirements.txt
@@ -280,8 +280,7 @@ curl -N -X POST http://localhost:8000/api/v1/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "company_name": "Sample Corp",
-    "query": "Summarize key financial risks and leverage",
-    "fiscal_year": 2023
+    "query": "Summarize key financial risks and leverage"
   }'
 ```
 
@@ -294,13 +293,13 @@ data: {"event":"node_started","node":"retrieve_node"}
 
 data: {"event":"retrieval","node":"retrieve_node","chunk_count":4,"preview":[...]}
 
-data: {"event":"tool_start","tool":"assess_debt_risk","input":{...}}
+data: {"event":"tool_start","tool":"calculate_profit_margin","input":{"net_income":93736,"revenue":391035}}
 
-data: {"event":"tool_end","tool":"assess_debt_risk","output":"MODERATE_DEBT_RISK"}
+data: {"event":"tool_end","tool":"calculate_profit_margin","output":{"profit_margin_pct":23.97}}
 
 data: {"event":"final_output","node":"format_output_node","data":{
   "company_name":"Sample Corp",
-  "metrics":{"revenue":null,"net_income":null,"debt_to_equity":1.5,"profit_margin":null},
+  "metrics":{"revenue":391035,"net_income":93736,"profit_margin":23.97},
   "risk_level":"MEDIUM",
   "summary":"...",
   "sources":["data/sample_10k.pdf"]
@@ -347,7 +346,7 @@ Locally, `@trace_latency` also prints lines like:
 ```text
 [LATENCY] retrieve_node completed in 142.30 ms
 [OBSERVABILITY] LangSmith tracing is ENABLED
-[AUDIT] {"company_name":"Apple Inc.","chunk_count":4,"tools":["assess_debt_risk"],"confidence":"HIGH","guardrail":null}
+[AUDIT] {"company_name":"Apple Inc.","chunk_count":4,"tools":["calculate_profit_margin"],"confidence":"HIGH","guardrail":null}
 ```
 
 Latency logs answer “how slow was this node?” LangSmith answers “what did the model see and do?” The `[AUDIT]` line is a simple, local trail of sources + tools + guardrail outcome. None of these **stop** hallucinations; they make failures visible.

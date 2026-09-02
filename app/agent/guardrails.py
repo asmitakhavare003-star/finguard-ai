@@ -77,10 +77,10 @@ def apply_metric_guardrails(
     """Drop tool-derived metrics the calculator never produced.
 
     Revenue / net income may come from retrieved 10-K text. Profit margin is a
-    computed ratio — if ``calculate_financial_ratios`` did not run, null it so
+    computed ratio — if ``calculate_profit_margin`` did not run, null it so
     the model cannot invent 23.97%.
     """
-    if "calculate_financial_ratios" not in tool_names and output.metrics.profit_margin is not None:
+    if "calculate_profit_margin" not in tool_names and output.metrics.profit_margin is not None:
         output.metrics.profit_margin = None
         output.guardrail = UNGROUNDED_PROFIT_MARGIN
         output.confidence = ConfidenceLevel.LOW

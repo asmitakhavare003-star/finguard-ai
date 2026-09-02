@@ -17,16 +17,6 @@ class TestFinancialQueryInput:
     def test_parses_valid_payload(self, sample_query_input: FinancialQueryInput) -> None:
         assert sample_query_input.company_name == "Apple Inc."
         assert sample_query_input.query.startswith("What are the key")
-        assert sample_query_input.fiscal_year == 2023
-
-    def test_rejects_invalid_fiscal_year_type(self) -> None:
-        with pytest.raises(ValidationError) as exc_info:
-            FinancialQueryInput(
-                company_name="Apple Inc.",
-                query="Summarize liquidity",
-                fiscal_year="twenty-twenty-three",  # type: ignore[arg-type]
-            )
-        assert "fiscal_year" in str(exc_info.value)
 
     def test_rejects_missing_required_fields(self) -> None:
         with pytest.raises(ValidationError):

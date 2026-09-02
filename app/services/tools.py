@@ -10,7 +10,7 @@ from langchain_core.tools import tool
 
 
 @tool
-def calculate_financial_ratios(net_income: float, revenue: float) -> dict:
+def calculate_profit_margin(net_income: float, revenue: float) -> dict:
     """Calculate net profit margin percentage from income statement figures.
 
     Computes ``(net_income / revenue) * 100`` and returns the result as a
@@ -36,27 +36,5 @@ def calculate_financial_ratios(net_income: float, revenue: float) -> dict:
     return {"profit_margin_pct": profit_margin_pct}
 
 
-@tool
-def assess_debt_risk(debt_to_equity: float) -> str:
-    """Evaluate leverage risk from a debt-to-equity ratio using fixed thresholds.
-
-    Thresholds:
-        - ``debt_to_equity > 2.0`` → ``HIGH_DEBT_RISK``
-        - ``debt_to_equity > 1.0`` → ``MODERATE_DEBT_RISK``
-        - otherwise → ``LOW_DEBT_RISK``
-
-    Args:
-        debt_to_equity: Total liabilities divided by shareholders' equity.
-
-    Returns:
-        One of ``HIGH_DEBT_RISK``, ``MODERATE_DEBT_RISK``, or ``LOW_DEBT_RISK``.
-    """
-    if debt_to_equity > 2.0:
-        return "HIGH_DEBT_RISK"
-    if debt_to_equity > 1.0:
-        return "MODERATE_DEBT_RISK"
-    return "LOW_DEBT_RISK"
-
-
 # Bind this list to the LLM / agent (e.g. ``llm.bind_tools(FINANCIAL_TOOLS)``).
-FINANCIAL_TOOLS = [calculate_financial_ratios, assess_debt_risk]
+FINANCIAL_TOOLS = [calculate_profit_margin]

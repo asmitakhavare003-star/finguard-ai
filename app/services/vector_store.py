@@ -10,10 +10,11 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from pypdf import PdfReader
 from qdrant_client.http.exceptions import UnexpectedResponse
 
 from app.core.config import settings
@@ -45,7 +46,7 @@ def ingest_pdf(pdf_path: str = DEFAULT_PDF_PATH) -> QdrantVectorStore:
     """Load a PDF, chunk it, embed it, and upsert chunks into Qdrant.
 
     Steps:
-        1. Load pages with ``PyPDFLoader``.
+        1. Load pages with ``pypdf.PdfReader``.
         2. Split text with ``RecursiveCharacterTextSplitter``
            (chunk_size=1000, chunk_overlap=150).
         3. Embed chunks via ``OpenAIEmbeddings`` (``text-embedding-3-small``).
@@ -71,8 +72,14 @@ def ingest_pdf(pdf_path: str = DEFAULT_PDF_PATH) -> QdrantVectorStore:
         )
 
     try:
-        loader = PyPDFLoader(str(path))
-        documents = loader.load()
+        reader = PdfReader(path)
+        documents = [
+            Document(
+                page_content=page.extract_text() or "",
+                metadata={"source": str(path), "page": page_number},
+            )
+            for page_number, page in enumerate(reader.pages)
+        ]
     except FileNotFoundError:
         raise
     except Exception as exc:  # noqa: BLE001 — surface loader/parse failures clearly

@@ -23,7 +23,6 @@ def sample_query_input() -> FinancialQueryInput:
     return FinancialQueryInput(
         company_name="Apple Inc.",
         query="What are the key financial risks?",
-        fiscal_year=2023,
     )
 
 
@@ -62,7 +61,6 @@ def sample_financial_summary() -> FinancialSummaryOutput:
         metrics=FinancialMetrics(
             revenue=383.29,
             net_income=97.0,
-            debt_to_equity=1.5,
             profit_margin=25.3,
         ),
         risk_level=RiskLevel.MEDIUM,

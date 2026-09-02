@@ -65,7 +65,7 @@ def test_profit_margin_kept_when_calculator_ran() -> None:
         summary="Tool-backed margin",
         sources=["data/sample_10k.pdf"],
     )
-    guarded = apply_metric_guardrails(output, {"calculate_financial_ratios"})
+    guarded = apply_metric_guardrails(output, {"calculate_profit_margin"})
 
     assert guarded.metrics.profit_margin == 23.97
     assert guarded.confidence is ConfidenceLevel.HIGH
@@ -77,11 +77,11 @@ def test_called_tool_names_reads_ai_message_tool_calls() -> None:
         content="",
         tool_calls=[
             {
-                "name": "calculate_financial_ratios",
+                "name": "calculate_profit_margin",
                 "args": {"net_income": 1.0, "revenue": 2.0},
                 "id": "call_1",
                 "type": "tool_call",
             }
         ],
     )
-    assert called_tool_names([message]) == {"calculate_financial_ratios"}
+    assert called_tool_names([message]) == {"calculate_profit_margin"}

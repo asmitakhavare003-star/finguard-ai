@@ -67,7 +67,7 @@ def reason_and_tool_node(state: AgentState) -> dict[str, Any]:
         f"Query: {state['query']}\n\n"
         f"Retrieved context from financial reports:\n{context}\n\n"
         "Analyze the query using the context. Call tools when you need exact "
-        "profit-margin or debt-risk calculations. Then provide a clear analysis."
+        "profit-margin calculations. Then provide a clear analysis."
     )
 
     messages: list = [
@@ -149,7 +149,7 @@ def format_output_node(state: AgentState) -> dict[str, Any]:
         f"Tools actually called this run: {sorted(tool_names) or 'none'}\n\n"
         "Produce a FinancialSummaryOutput. Copy metrics only from the transcript "
         "or tool results. If a metric is unknown, leave it null. "
-        "If calculate_financial_ratios was not called, leave profit_margin null. "
+        "If calculate_profit_margin was not called, leave profit_margin null. "
         "Do not invent sources. Choose an appropriate risk_level "
         "(LOW, MEDIUM, HIGH, or CRITICAL)."
     )

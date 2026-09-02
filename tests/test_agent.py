@@ -60,15 +60,15 @@ def test_analyze_endpoint_streams_sse_chunks(
         }
         yield {
             "event": "on_tool_start",
-            "name": "assess_debt_risk",
+            "name": "calculate_profit_margin",
             "tags": [],
-            "data": {"input": {"debt_to_equity": 1.5}},
+            "data": {"input": {"net_income": 93736, "revenue": 391035}},
         }
         yield {
             "event": "on_tool_end",
-            "name": "assess_debt_risk",
+            "name": "calculate_profit_margin",
             "tags": [],
-            "data": {"output": "MODERATE_DEBT_RISK"},
+            "data": {"output": {"profit_margin_pct": 23.97}},
         }
         yield {
             "event": "on_chain_end",

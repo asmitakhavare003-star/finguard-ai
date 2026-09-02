@@ -39,9 +39,9 @@ class ConfidenceLevel(str, Enum):
 class FinancialQueryInput(BaseModel):
     """Inbound request for a company financial intelligence query.
 
-    Pydantic coerces and checks types when the model is instantiated — e.g. a
-    non-integer ``fiscal_year`` raises a ``ValidationError`` instead of failing
-    later inside an agent node.
+    Pydantic checks required fields and their types when the model is
+    instantiated instead of allowing invalid values to fail inside an agent
+    node.
     """
 
     company_name: str = Field(
@@ -52,10 +52,6 @@ class FinancialQueryInput(BaseModel):
     query: str = Field(
         ...,
         description="User prompt or question about the company's finances",
-    )
-    fiscal_year: Optional[int] = Field(
-        default=None,
-        description="Optional fiscal year filter; omitted means latest available",
     )
 
 
@@ -68,7 +64,6 @@ class FinancialMetrics(BaseModel):
 
     revenue: Optional[float] = None
     net_income: Optional[float] = None
-    debt_to_equity: Optional[float] = None
     profit_margin: Optional[float] = None
 
 
