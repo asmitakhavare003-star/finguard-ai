@@ -202,7 +202,7 @@ Swagger: **POST `/api/v1/analyze` → Try it out**, or:
 ```bash
 curl -N -X POST http://localhost:8000/api/v1/analyze \
   -H "Content-Type: application/json" \
-  -d '{"company_name":"Apple Inc.","query":"What was Apple net income for fiscal 2024?"}'
+  -d '{"company_name":"Apple Inc.","query":"What was Apple net income?"}'
 ```
 
 **Success:** SSE events (`retrieval`, `final_output`, `done`) and a real summary — not `confidence: REFUSED`.
