@@ -41,7 +41,8 @@ class FinancialQueryInput(BaseModel):
 
     Pydantic checks required fields and their types when the model is
     instantiated instead of allowing invalid values to fail inside an agent
-    node.
+    node. ``year`` is optional: when set, retrieval only searches that filing
+    year. ``company_name`` is always applied as a metadata filter.
     """
 
     company_name: str = Field(
@@ -53,6 +54,23 @@ class FinancialQueryInput(BaseModel):
         ...,
         description="User prompt or question about the company's finances",
     )
+    year: Optional[int] = Field(
+        default=None,
+        ge=1900,
+        le=2100,
+        description="Filing year to retrieve. Omit to search every ingested year for this company.",
+        examples=[2024],
+    )
+
+
+class IngestResponse(BaseModel):
+    """Result of storing one PDF in Qdrant."""
+
+    document_id: str
+    company: str
+    year: int
+    filename: str
+    chunk_count: int
 
 
 class FinancialMetrics(BaseModel):

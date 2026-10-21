@@ -47,7 +47,7 @@ def run_eval(
     case_ids: list[str] | None = None,
 ) -> EvalReport:
     """Ask Qdrant the golden questions and grade the chunks that come back."""
-    from app.services.vector_store import get_retriever
+    from app.services.vector_store import open_vector_store, search_chunks
 
     dataset = load_golden_cases(golden_path)
     cases = dataset.get("cases") or []
@@ -55,14 +55,20 @@ def run_eval(
         wanted = set(case_ids)
         cases = [case for case in cases if case.get("id") in wanted]
 
-    retriever = get_retriever()
+    vector_store = open_vector_store()
     results: list[CaseResult] = []
 
     for case in cases:
         case_id = str(case.get("id", "?"))
         query = str(case.get("query", ""))
         retrieval_cfg = case.get("retrieval") or {}
-        docs = retriever.invoke(query)
+        year = case.get("year")
+        docs = search_chunks(
+            query,
+            company=str(case.get("company_name") or ""),
+            year=int(year) if year is not None else None,
+            vector_store=vector_store,
+        )
 
         relevance = chunk_relevance_score(query, docs)
         ok, reason = score_retrieval_relevance(

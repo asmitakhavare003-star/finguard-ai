@@ -32,6 +32,7 @@ def mock_agent_state(sample_query_input: FinancialQueryInput) -> dict[str, Any]:
     return {
         "query": sample_query_input.query,
         "company_name": sample_query_input.company_name,
+        "year": sample_query_input.year,
         "retrieved_docs": [],
         "messages": [],
         "final_output": None,

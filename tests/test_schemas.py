@@ -17,6 +17,23 @@ class TestFinancialQueryInput:
     def test_parses_valid_payload(self, sample_query_input: FinancialQueryInput) -> None:
         assert sample_query_input.company_name == "Apple Inc."
         assert sample_query_input.query.startswith("What are the key")
+        assert sample_query_input.year is None
+
+    def test_accepts_optional_year(self) -> None:
+        payload = FinancialQueryInput(
+            company_name="Apple Inc.",
+            query="What was net income?",
+            year=2024,
+        )
+        assert payload.year == 2024
+
+    def test_rejects_year_out_of_range(self) -> None:
+        with pytest.raises(ValidationError):
+            FinancialQueryInput(
+                company_name="Apple Inc.",
+                query="What was net income?",
+                year=1800,
+            )
 
     def test_rejects_missing_required_fields(self) -> None:
         with pytest.raises(ValidationError):

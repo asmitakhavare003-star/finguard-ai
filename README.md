@@ -8,8 +8,8 @@ FinGuard AI combines **LangGraph** agent orchestration, **Qdrant** vector retrie
 
 ## Key Features
 
-- **RAG over financial PDFs** — ingest 10-K (and similar) filings into Qdrant with OpenAI embeddings
-- **Safety guardrails** — empty retrieval **refuses** (no LLM call); profit margin is dropped unless the calculator tool actually ran; each run logs an `[AUDIT]` line
+- **RAG over financial PDFs** — `POST /api/v1/ingest` uploads a filing into Qdrant with company and year metadata on every chunk
+- **Safety guardrails** — retrieval is limited to the requested company (and year, when sent); zero matching chunks **refuse** (no LLM call); profit margin is dropped unless the calculator tool actually ran; each run logs an `[AUDIT]` line
 - **Structured Pydantic v2 validation** — `FinancialSummaryOutput` + `RiskLevel` / `ConfidenceLevel` enums enforce strict API contracts
 - **Deterministic financial tool** — profit-margin calculation bound to the LLM via LangChain `@tool`
 - **Stateful LangGraph orchestration** — `retrieve → reason/tools → format` (or `refuse`) pipeline with shared `AgentState`
@@ -40,17 +40,17 @@ FinGuard AI combines **LangGraph** agent orchestration, **Qdrant** vector retrie
 
 ```text
  ┌──────────────────┐
- │  Financial PDF   │  (e.g. data/sample_10k.pdf)
+ │  POST /ingest    │  multipart: PDF file + company + year
  │  pypdf +         │
  │  text split      │
  └────────┬─────────┘
-          │ embed (OpenAI)
+          │ embed (OpenAI); stamp company, year, document_id
           ▼
  ┌──────────────────┐
  │  Qdrant          │  collection: financial_reports
  │  vector store    │
  └────────┬─────────┘
-          │ similarity retrieve (top-k)
+          │ similarity retrieve, filtered by company (+ year)
           ▼
  ┌──────────────────┐     ┌─────────────────────┐
  │  LangGraph       │────▶│  FINANCIAL_TOOLS    │
@@ -69,9 +69,9 @@ FinGuard AI combines **LangGraph** agent orchestration, **Qdrant** vector retrie
 
 **Step-by-step data flow**
 
-1. **Ingest** — PDF → chunks → embeddings → upsert into Qdrant (`financial_reports`)
-2. **Retrieve** — user query hits `retrieve_node` → top-k chunks into `AgentState.retrieved_docs`
-3. **Guardrail** — if zero chunks, `refuse_node` returns `confidence=REFUSED` with null metrics (no LLM call)
+1. **Ingest** — `POST /api/v1/ingest` receives the PDF as a file upload, plus `company` and `year`. Chunks are embedded and upserted into Qdrant (`financial_reports`) with that metadata.
+2. **Retrieve** — `retrieve_node` searches only chunks whose `company` matches `company_name`. If the request includes `year`, that year is required too.
+3. **Guardrail** — if the filter matches nothing, `refuse_node` returns `confidence=REFUSED` with null metrics (no LLM call)
 4. **Reason + tools** — `gpt-4o-mini` with bound tools analyzes context; may call margin/debt helpers
 5. **Structure** — `format_output_node` emits validated `FinancialSummaryOutput`; profit margin is stripped unless the calculator tool ran
 6. **Stream** — FastAPI yields SSE frames (status, retrieval, tools, guardrail, final output, done)
@@ -83,7 +83,7 @@ FinGuard AI combines **LangGraph** agent orchestration, **Qdrant** vector retrie
 ```text
 finguard-ai/
 ├── app/
-│   ├── main.py                 # FastAPI app, /health, SSE /api/v1/analyze
+│   ├── main.py                 # FastAPI app, /health, /api/v1/ingest, SSE /api/v1/analyze
 │   ├── agent/                  # LangGraph financial agent
 │   │   ├── state.py            # AgentState TypedDict
 │   │   ├── guardrails.py       # empty-retrieve refuse + metric stripping
@@ -94,7 +94,7 @@ finguard-ai/
 │   ├── schemas/
 │   │   └── financial.py        # Query / metrics / RiskLevel / output models
 │   ├── services/
-│   │   ├── vector_store.py     # PDF ingest + Qdrant retriever
+│   │   ├── vector_store.py     # PDF ingest + filtered Qdrant search
 │   │   └── tools.py            # @tool financial helpers
 │   └── eval/                   # Golden-set RAG eval harness
 ├── data/
@@ -106,6 +106,7 @@ finguard-ai/
 │   ├── conftest.py             # Shared fixtures (TestClient, mocks)
 │   ├── test_schemas.py         # Pydantic contract tests
 │   ├── test_agent.py           # retrieve_node + streaming API tests
+│   ├── test_ingest.py          # ingest metadata + upload API tests
 │   ├── test_guardrails.py      # empty retrieve refuse + metric stripping
 │   ├── test_eval_rag.py        # Golden dataset + retrieval scorer tests
 │   └── test_tools.py           # Profit-margin calculation
@@ -189,11 +190,16 @@ curl http://localhost:8000/health
 
 Until this succeeds, retrieval is empty and the API **refuses** instead of answering.
 
+The PDF is uploaded as a file. You do not paste its text into the body. `company` must match the name you later send to `/api/v1/analyze` (the golden eval set uses `Apple Inc.`).
+
 ```bash
-docker compose exec web python -c "from app.services.vector_store import ingest_pdf; ingest_pdf('data/sample_10k.pdf')"
+curl -X POST http://localhost:8000/api/v1/ingest \
+  -F "file=@data/sample_10k.pdf" \
+  -F "company=Apple Inc." \
+  -F "year=2024"
 ```
 
-This uses OpenAI embeddings. Re-run only if you wiped Qdrant (`docker compose down -v`).
+A successful response includes `document_id`, `company`, `year`, `filename`, and `chunk_count`. This call uses OpenAI embeddings. Uploading the same company, year, and filename again replaces that filing. If you ingested this PDF before metadata existed, wipe Qdrant once (`docker compose down -v`), start the stack, and ingest again — old chunks have no `company` field, so the filter will not return them.
 
 ### 5. Call the live API
 
@@ -202,12 +208,14 @@ Swagger: **POST `/api/v1/analyze` → Try it out**, or:
 ```bash
 curl -N -X POST http://localhost:8000/api/v1/analyze \
   -H "Content-Type: application/json" \
-  -d '{"company_name":"Apple Inc.","query":"What was Apple net income?"}'
+  -d '{"company_name":"Apple Inc.","year":2024,"query":"What was Apple net income?"}'
 ```
+
+`year` is optional. Omit it to search every ingested year for that company.
 
 **Success:** SSE events (`retrieval`, `final_output`, `done`) and a real summary — not `confidence: REFUSED`.
 
-If you see **REFUSED**, ingest failed or Qdrant is empty. Repeat step 4.
+If you see **REFUSED**, ingest failed, the company or year does not match what was stored, or Qdrant is empty. Repeat step 4 and use the same `company` string.
 
 More request/response detail: [API usage](#api-usage--example-requests).
 
@@ -254,8 +262,16 @@ python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
-python -c "from app.services.vector_store import ingest_pdf; ingest_pdf('data/sample_10k.pdf')"
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+With the API up, ingest from another terminal:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ingest \
+  -F "file=@data/sample_10k.pdf" \
+  -F "company=Apple Inc." \
+  -F "year=2024"
 ```
 
 Then use the same health, `/api/v1/analyze`, `pytest`, and `eval_rag.py` commands as above.
@@ -271,15 +287,35 @@ curl http://localhost:8000/health
 # {"status":"ok"}
 ```
 
+### Ingest a filing
+
+`POST /api/v1/ingest` is `multipart/form-data`.
+
+| Field | Required | Meaning |
+|-------|----------|---------|
+| `file` | yes | The PDF. Sent as a file upload, not as text in JSON. |
+| `company` | yes | Stored on every chunk and used as the retrieval filter. Exact match. |
+| `year` | yes | Filing year stored on every chunk, for example `2024`. |
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ingest \
+  -F "file=@data/sample_10k.pdf" \
+  -F "company=Apple Inc." \
+  -F "year=2024"
+```
+
+Swagger at [http://localhost:8000/docs](http://localhost:8000/docs) shows a file picker plus the two text fields.
+
 ### Streaming analyze
 
-`POST /api/v1/analyze` accepts `FinancialQueryInput` and returns **Server-Sent Events** (`text/event-stream`).
+`POST /api/v1/analyze` accepts `FinancialQueryInput` and returns **Server-Sent Events** (`text/event-stream`). Retrieval only returns chunks ingested for `company_name`. Add `year` to limit that further. A company or year with no chunks is the same refusal as an empty corpus.
 
 ```bash
 curl -N -X POST http://localhost:8000/api/v1/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "company_name": "Sample Corp",
+    "company_name": "Apple Inc.",
+    "year": 2024,
     "query": "Summarize key financial risks and leverage"
   }'
 ```
@@ -287,7 +323,7 @@ curl -N -X POST http://localhost:8000/api/v1/analyze \
 **Example SSE frames you may see**
 
 ```text
-data: {"event":"status","stage":"started","company_name":"Sample Corp",...}
+data: {"event":"status","stage":"started","company_name":"Apple Inc.","year":2024,...}
 
 data: {"event":"node_started","node":"retrieve_node"}
 
@@ -298,11 +334,11 @@ data: {"event":"tool_start","tool":"calculate_profit_margin","input":{"net_incom
 data: {"event":"tool_end","tool":"calculate_profit_margin","output":{"profit_margin_pct":23.97}}
 
 data: {"event":"final_output","node":"format_output_node","data":{
-  "company_name":"Sample Corp",
+  "company_name":"Apple Inc.",
   "metrics":{"revenue":391035,"net_income":93736,"profit_margin":23.97},
   "risk_level":"MEDIUM",
   "summary":"...",
-  "sources":["data/sample_10k.pdf"]
+  "sources":["sample_10k.pdf"]
 }}
 
 data: {"event":"done","stage":"completed"}
@@ -329,8 +365,9 @@ pytest -m integration -v
 The suite covers:
 
 - Schema validation / `RiskLevel` and `ConfidenceLevel` enforcement
-- `retrieve_node` with a mocked Qdrant retriever
+- `retrieve_node` passes company and optional year into filtered search
 - Guardrails: empty retrieval refuse + ungrounded profit-margin stripping
+- `POST /api/v1/ingest` file upload and chunk metadata
 - Streaming `/api/v1/analyze` (mocked `astream_events`) returning valid SSE frames
 
 ### LangSmith
@@ -357,7 +394,7 @@ You cannot guarantee an LLM never invents facts. FinGuard reduces the worst case
 
 | Rule | What happens |
 |------|----------------|
-| No chunks retrieved | `refuse_node` — no LLM call, `confidence=REFUSED`, all metrics null |
+| No chunks for that company (and year, if sent) | `refuse_node` — no LLM call, `confidence=REFUSED`, all metrics null |
 | Calculator tool not called | `profit_margin` is stripped to `null` in Python |
 | Invalid schema / enum | Pydantic rejects the payload |
 
@@ -370,7 +407,7 @@ Project traces appear under your LangSmith project name (`LANGCHAIN_PROJECT`, de
 One exam: did search find the right 10-K chunks?
 
 - Answer key: `data/eval/golden_cases.json` (20 Apple questions + required terms)
-- Script: `scripts/eval_rag.py` — same Qdrant retriever as the API
+- Script: `scripts/eval_rag.py` — same filtered Qdrant search as the API (`company_name` on each golden case; `Apple Inc.` for this set)
 - Everything else (schema, tools, citations, guardrails) is `pytest`
 
 **Run eval** — Qdrant up, PDF ingested, then from the repo root (see [step 7](#7-run-eval-after-the-api-works)):

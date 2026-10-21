@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from typing import Any, AsyncIterator
-from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,18 +18,44 @@ def test_retrieve_node_updates_retrieved_docs(
     sample_documents: list[Document],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """retrieve_node should write retriever results into retrieved_docs."""
-    mock_retriever = MagicMock(name="retriever")
-    mock_retriever.invoke.return_value = sample_documents
-    monkeypatch.setattr(
-        "app.agent.graph.get_retriever",
-        lambda k=4: mock_retriever,
-    )
+    """retrieve_node should search with the company filter and store the chunks."""
+    captured: dict[str, Any] = {}
+
+    def fake_search(query: str, *, company: str, year: int | None = None, k: int = 4):
+        captured["query"] = query
+        captured["company"] = company
+        captured["year"] = year
+        captured["k"] = k
+        return sample_documents
+
+    monkeypatch.setattr("app.agent.graph.search_chunks", fake_search)
 
     result = retrieve_node(mock_agent_state)
 
     assert result["retrieved_docs"] == sample_documents
-    mock_retriever.invoke.assert_called_once_with(mock_agent_state["query"])
+    assert captured["query"] == mock_agent_state["query"]
+    assert captured["company"] == "Apple Inc."
+    assert captured["year"] is None
+    assert captured["k"] == 4
+
+
+def test_retrieve_node_passes_year_filter(
+    mock_agent_state: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the request includes a year, retrieval filters on it."""
+    captured: dict[str, Any] = {}
+
+    def fake_search(query: str, *, company: str, year: int | None = None, k: int = 4):
+        captured["year"] = year
+        captured["company"] = company
+        return []
+
+    monkeypatch.setattr("app.agent.graph.search_chunks", fake_search)
+    retrieve_node({**mock_agent_state, "year": 2024})
+
+    assert captured["company"] == "Apple Inc."
+    assert captured["year"] == 2024
 
 
 @pytest.mark.integration

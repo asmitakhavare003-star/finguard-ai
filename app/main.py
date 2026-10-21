@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from langchain_core.documents import Document
 from pydantic import BaseModel
@@ -16,7 +16,8 @@ from pydantic import BaseModel
 from app.agent.graph import financial_agent
 from app.core.config import settings
 from app.core.observability import setup_tracing
-from app.schemas.financial import FinancialQueryInput
+from app.schemas.financial import FinancialQueryInput, IngestResponse
+from app.services.vector_store import ingest_pdf_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,7 @@ def _initial_agent_state(query_input: FinancialQueryInput) -> dict[str, Any]:
     return {
         "query": query_input.query,
         "company_name": query_input.company_name,
+        "year": query_input.year,
         "retrieved_docs": [],
         "messages": [],
         "final_output": None,
@@ -91,6 +93,7 @@ async def event_generator(query_input: FinancialQueryInput) -> AsyncIterator[str
             "event": "status",
             "stage": "started",
             "company_name": query_input.company_name,
+            "year": query_input.year,
             "query": query_input.query,
         }
     )
@@ -221,6 +224,28 @@ async def event_generator(query_input: FinancialQueryInput) -> AsyncIterator[str
 async def health() -> dict[str, str]:
     """Liveness probe for load balancers and local checks."""
     return {"status": "ok"}
+
+
+@app.post("/api/v1/ingest", response_model=IngestResponse)
+async def ingest(
+    file: UploadFile = File(..., description="Financial PDF to chunk and store"),
+    company: str = Form(..., description="Company this filing belongs to"),
+    year: int = Form(..., description="Filing year, for example 2024"),
+) -> IngestResponse:
+    """Upload a PDF and store its chunks with company and year metadata.
+
+    The body is multipart form data: the PDF is the ``file`` field, not JSON
+    text. Re-uploading the same company, year, and filename replaces that
+    filing.
+    """
+    filename = file.filename or "upload.pdf"
+    data = await file.read()
+    try:
+        return ingest_pdf_bytes(data, filename, company=company, year=year)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ConnectionError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/api/v1/analyze")

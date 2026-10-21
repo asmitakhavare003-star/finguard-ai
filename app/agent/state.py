@@ -15,7 +15,8 @@ class AgentState(TypedDict):
 
     Fields:
         query: User question / prompt driving retrieval and reasoning.
-        company_name: Company the analysis targets (used in structured output).
+        company_name: Company the analysis targets. Also the retrieval filter.
+        year: Optional filing year. When set, retrieval requires this year.
         retrieved_docs: RAG chunks returned from Qdrant (LangChain Documents).
         messages: Chat transcript; ``add_messages`` appends rather than replaces.
         final_output: Strict ``FinancialSummaryOutput`` produced by the last node.
@@ -23,6 +24,7 @@ class AgentState(TypedDict):
 
     query: str
     company_name: str
+    year: Optional[int]
     retrieved_docs: list[Any]
     messages: Annotated[list[BaseMessage], add_messages]
     final_output: Optional[FinancialSummaryOutput]

@@ -20,7 +20,7 @@ from app.core.config import settings
 from app.core.observability import log_run_audit, trace_latency
 from app.schemas.financial import FinancialSummaryOutput
 from app.services.tools import FINANCIAL_TOOLS
-from app.services.vector_store import get_retriever
+from app.services.vector_store import search_chunks
 
 LLM_MODEL = "gpt-4o-mini"
 
@@ -34,13 +34,17 @@ def _chat_model() -> ChatOpenAI:
 
 @trace_latency
 def retrieve_node(state: AgentState) -> dict[str, Any]:
-    """Fetch top RAG chunks for ``state['query']`` from Qdrant.
+    """Fetch top RAG chunks for this company (and year, when set).
 
-    Calls ``get_retriever()``, runs similarity search for the user query, and
-    writes the resulting documents into ``retrieved_docs``.
+    Similarity search runs only inside the metadata filter. Zero matches leave
+    ``retrieved_docs`` empty so the graph refuses instead of using another
+    company's filing.
     """
-    retriever = get_retriever()
-    docs = retriever.invoke(state["query"])
+    docs = search_chunks(
+        state["query"],
+        company=state["company_name"],
+        year=state.get("year"),
+    )
     return {"retrieved_docs": docs}
 
 
